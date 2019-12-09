@@ -1,117 +1,53 @@
 use std::fs::File;
 use std::io::{BufRead,Read,Write};
 
-struct InstructionResult {
-    jump: Option<usize>,
-    new_params: Vec<i32>,
-}
-
 #[derive(Copy, Clone)]
 enum ParameterMode {
     Position,
     Immediate,
 }
 
+type Parameter = usize;
+
+#[derive(Copy, Clone)]
 enum Instruction {
     Add(Parameter, Parameter, Parameter),
     Multiply(Parameter, Parameter, Parameter),
-    Input,
-    Output,
-    JumpIfTrue(Parameter),
-    JumpIfFalse(Parameter),
-    LessThan(Parameter, Parameter),
-    Equal(Parameter, Parameter),
-}
-
-type Operation<'a> = Box<dyn FnMut(&[i32]) -> InstructionResult + 'a>;
-
-// struct Instruction<'a> {
-//     parameter_count: usize,
-//     operation: Operation<'a>,
-// }
-
-struct Opcode<'a> {
-    instruction: Instruction<'a>,
-    parameter_modes: Vec<ParameterMode>,
+    Input(Parameter),
+    Output(Parameter),
+    JumpIfTrue(Parameter, Parameter),
+    JumpIfFalse(Parameter, Parameter),
+    LessThan(Parameter, Parameter, Parameter),
+    Equal(Parameter, Parameter, Parameter),
+    Halt,
 }
 
 fn get_param_count(instr: Instruction) -> usize {
     match instr {
-        Instruction::Add => 3,
-        Instruction::Multiply = 3,
-        Instruction::Input = 1,
-        Instruction::Output = 1,
-        Instruction::JumpIfTrue = 1,
-        Instruction::JumpIfFalse = 1,
-        Instruction::LessThan = 2,
-        Instruction::Equal = 2,
+        Instruction::Add(_, _, _) => 3,
+        Instruction::Multiply(_, _, _) => 3,
+        Instruction::Input(_) => 1,
+        Instruction::Output(_) => 1,
+        Instruction::JumpIfTrue(_, _) => 2,
+        Instruction::JumpIfFalse(_, _) => 2,
+        Instruction::LessThan(_, _, _) => 3,
+        Instruction::Equal(_, _, _) => 3,
+        Instruction::Halt => 0,
     }
 }
 
-fn arithmetic_instruction<'a, F: FnMut(i32, i32) -> i32 + 'a>(mut func: F) -> Instruction<'a> {
-    Instruction {
-        parameter_count: 3,
-        operation: Box::new(move |params| InstructionResult {
-            jump: None,
-            new_params: vec![params[0], params[1], func(params[0], params[1])]
-        }),
-    }
-}
-
-fn jmp_instruction<'a, F: FnMut(i32) -> bool + 'a>(mut func: F) -> Instruction<'a> {
-    Instruction {
-        parameter_count: 2,
-        operation: Box::new(move |params| InstructionResult {
-            jump: if func(params[0]) { Some(params[1] as usize) } else { None },
-            new_params: params.to_vec(),
-        }),
-    }
-}
-
-fn cmp_instruction<'a, F: FnMut(i32, i32) -> bool + 'a>(mut func: F) -> Instruction<'a> {
-    Instruction {
-        parameter_count: 3,
-        operation: Box::new(move |params| InstructionResult {
-            jump: None,
-            new_params: vec![params[0], params[1], if func(params[0], params[1]) { 1 } else { 0 }],
-        }),
-    }
-}
-
-fn read_int(_params: &[i32]) -> InstructionResult {
+fn read_int() -> i32 {
     print!("Please enter input: ");
     std::io::stdout().flush().ok().expect("Could not flush stdout");
 
     let line = std::io::stdin().lock().lines().next().unwrap().unwrap();
 
-    InstructionResult {
-        jump: None,
-        new_params: vec![line.parse().unwrap()],
-    }
+    line.parse().unwrap()
 }
 
-fn print_int(params: &[i32]) -> InstructionResult {
-    print!("<{}>", params[0]);
+fn print_int(value: i32) {
+    print!("<{}>", value);
     std::io::stdout().flush().ok().expect("Could not flush stdout");
-
-    InstructionResult {
-        jump: None,
-        new_params: params.to_vec(),
-    }
-}
-
-fn decode_instruction<'a>(raw_opcode: i32) -> Instruction<'a> {
-    match raw_opcode {
-        1 => arithmetic_instruction(|a,b| a + b),
-        2 => arithmetic_instruction(|a,b| a * b),
-        3 => Instruction { parameter_count: 1, operation: Box::new(read_int) },
-        4 => Instruction { parameter_count: 1, operation: Box::new(print_int) },
-        5 => jmp_instruction(|a| a != 0),
-        6 => jmp_instruction(|a| a == 0),
-        7 => cmp_instruction(|a,b| a < b),
-        8 => cmp_instruction(|a,b| a == b),
-        _ => panic!()
-    }
 }
 
 fn decode_parameter_mode(raw_mode: i32) -> ParameterMode {
@@ -123,7 +59,7 @@ fn decode_parameter_mode(raw_mode: i32) -> ParameterMode {
 }
 
 fn decode_parameter_modes(raw_opcode: i32) -> Vec<ParameterMode> {
-    let mut raw_param_modes = raw_code / 100;
+    let mut raw_param_modes = raw_opcode / 100;
     let mut parameter_modes: Vec<ParameterMode> = vec![];
 
     while raw_param_modes != 0 {
@@ -134,62 +70,60 @@ fn decode_parameter_modes(raw_opcode: i32) -> Vec<ParameterMode> {
     parameter_modes
 }
 
-fn decode_instruction<'a>(program: &[i32], pc: usize) -> Opcode<'a> {
-    let parameter_modes = decode_parameter_modes()
+fn decode_instruction(program: &[i32], pc: usize) -> Instruction {
+    let opcode = program[pc];
+    let parameter_modes = decode_parameter_modes(opcode);
 
-    fn param(offset: usize) -> Parameter {
-        let mode = get(i).unwrap_or(&ParameterMode::Position))
+    let param = |offset: usize| -> Parameter {
+        let mode = parameter_modes.get(offset).unwrap_or(&ParameterMode::Position);
 
         match mode {
-            ParameterMode::Position => program[pc+offset+1]
-    }
-
-    return Opcode {
-        instruction: decode_instruction(raw_code % 100),
-        parameter_modes,
-    }
+            ParameterMode::Position => program[pc+offset+1] as usize,
+            ParameterMode::Immediate => pc+offset+1,
+        }
+    };
 
     match opcode % 100 {
-        1 => Add()
+        1 => Instruction::Add(param(0), param(1), param(2)),
+        2 => Instruction::Multiply(param(0), param(1), param(2)),
+        3 => Instruction::Input(param(0)),
+        4 => Instruction::Output(param(0)),
+        5 => Instruction::JumpIfTrue(param(0), param(1)),
+        6 => Instruction::JumpIfFalse(param(0), param(1)),
+        7 => Instruction::LessThan(param(0), param(1), param(2)),
+        8 => Instruction::Equal(param(0), param(1), param(2)),
+        99 => Instruction::Halt,
+        _ => panic!(),
     }
 }
 
-fn run_opcode(program: &mut [i32], pc: usize) -> usize {
-    let raw_opcode = program[pc];
-    let opcode = decode_opcode(raw_opcode);
+fn execute_instruction<I: FnMut() -> i32, O: FnMut(i32) -> ()>(program: &mut [i32], pc: &mut usize, instr: Instruction, input: &mut I, output: &mut O) {
+    *pc += 1 + get_param_count(instr);
 
-    let param_modes: Vec<ParameterMode> = (0..opcode.instruction.parameter_count).map(|i| *opcode.parameter_modes.get(i).unwrap_or(&ParameterMode::Position)).collect();
-    let param_addresses: Vec<usize> = param_modes.iter().enumerate().map(|(i, mode)| {
-        match mode {
-            ParameterMode::Position => program[pc+i+1] as usize,
-            ParameterMode::Immediate => pc+i+1,
-        }
-    }).collect();
-
-    let params: Vec<i32> = param_addresses.iter().map(|&address| program[address]).collect();
-
-    let mut operation = opcode.instruction.operation;
-
-    let result = operation(&params);
-
-    for (&address, &new_param) in param_addresses.iter().zip(result.new_params.iter()) {
-        program[address] = new_param;
-    }
-
-    match result.jump {
-        None => pc + opcode.instruction.parameter_count + 1,
-        Some(x) => x
+    match instr {
+        Instruction::Add(op1, op2, dest) => { program[dest] = program[op1] + program[op2]; },
+        Instruction::Multiply(op1, op2, dest) => { program[dest] = program[op1] * program[op2]; },
+        Instruction::Input(dest) => { program[dest] = input(); },
+        Instruction::Output(value) => { output(program[value]) },
+        Instruction::JumpIfTrue(value, target) => { if program[value] != 0 { *pc = program[target] as usize; } },
+        Instruction::JumpIfFalse(value, target) => { if program[value] == 0 { *pc = program[target] as usize; } },
+        Instruction::LessThan(op1, op2, dest) => { program[dest] = if program[op1] < program[op2] { 1 } else { 0 } },
+        Instruction::Equal(op1, op2, dest) => { program[dest] = if program[op1] == program[op2] { 1 } else { 0 } },
+        Instruction::Halt => panic!(),
     }
 }
 
-
-fn simulate(program: &mut [i32]) {
+fn simulate<I: FnMut() -> i32, O: FnMut(i32) -> ()>(program: &mut [i32], mut input: I, mut output: O) {
     let mut pc = 0;
 
     loop {
-        match program[pc] {
-            99 => return,
-            _ => pc = run_opcode(program, pc)
+        let instr = decode_instruction(program, pc);
+
+        match instr {
+            Instruction::Halt => return,
+            _ => {
+                execute_instruction(program, &mut pc, instr, &mut input, &mut output);
+            }
         }
     }
 }
@@ -217,15 +151,6 @@ mod tests {
     }
 }
 
-fn run(program: &mut [i32], noun: i32, verb: i32) -> i32 {
-    program[1] = noun;
-    program[2] = verb;
-
-    simulate(program);
-
-    program[0]
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = String::new();
     let mut file = File::open("input.txt")?;
@@ -234,7 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let program = buffer.trim().split(",").map(|s| s.parse()).collect::<Result<Vec<_>, _>>()?;
 
-    simulate(&mut program.clone());
+    simulate(&mut program.clone(), read_int, print_int);
 
     Ok(())
 }
