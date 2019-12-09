@@ -1,3 +1,4 @@
+
 use std::fs::File;
 use std::io::{BufRead,Read,Write};
 
@@ -12,19 +13,19 @@ enum ParameterMode {
     Immediate,
 }
 
-type Operation<'a> = Box<dyn FnMut(&[i32]) -> InstructionResult + 'a>;
+type Operation = Box<dyn FnMut(&[i32]) -> InstructionResult + 'static>;
 
-struct Instruction<'a> {
+struct Instruction {
     parameter_count: usize,
-    operation: Operation<'a>,
+    operation: Operation,
 }
 
-struct Opcode<'a> {
-    instruction: Instruction<'a>,
+struct Opcode {
+    instruction: Instruction,
     parameter_modes: Vec<ParameterMode>,
 }
 
-fn arithmetic_instruction<'a, F: FnMut(i32, i32) -> i32 + 'a>(mut func: F) -> Instruction<'a> {
+fn arithmetic_instruction<F: FnMut(i32, i32) -> i32 + 'static>(mut func: F) -> Instruction {
     Instruction {
         parameter_count: 3,
         operation: Box::new(move |params| InstructionResult {
@@ -34,7 +35,7 @@ fn arithmetic_instruction<'a, F: FnMut(i32, i32) -> i32 + 'a>(mut func: F) -> In
     }
 }
 
-fn jmp_instruction<'a, F: FnMut(i32) -> bool + 'a>(mut func: F) -> Instruction<'a> {
+fn jmp_instruction<F: FnMut(i32) -> bool + 'static>(mut func: F) -> Instruction {
     Instruction {
         parameter_count: 2,
         operation: Box::new(move |params| InstructionResult {
@@ -44,7 +45,7 @@ fn jmp_instruction<'a, F: FnMut(i32) -> bool + 'a>(mut func: F) -> Instruction<'
     }
 }
 
-fn cmp_instruction<'a, F: FnMut(i32, i32) -> bool + 'a>(mut func: F) -> Instruction<'a> {
+fn cmp_instruction<F: FnMut(i32, i32) -> bool + 'static>(mut func: F) -> Instruction {
     Instruction {
         parameter_count: 3,
         operation: Box::new(move |params| InstructionResult {
@@ -76,7 +77,7 @@ fn print_int(params: &[i32]) -> InstructionResult {
     }
 }
 
-fn decode_instruction<'a>(raw_opcode: i32) -> Instruction<'a> {
+fn decode_instruction(raw_opcode: i32) -> Instruction {
     match raw_opcode {
         1 => arithmetic_instruction(|a,b| a + b),
         2 => arithmetic_instruction(|a,b| a * b),
@@ -98,7 +99,7 @@ fn decode_parameter_mode(raw_mode: i32) -> ParameterMode {
     }
 }
 
-fn decode_opcode<'a>(raw_code: i32) -> Opcode<'a> {
+fn decode_opcode(raw_code: i32) -> Opcode {
     let mut raw_param_modes = raw_code / 100;
     let mut parameter_modes: Vec<ParameterMode> = vec![];
 
